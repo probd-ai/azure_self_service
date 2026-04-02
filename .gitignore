@@ -1,0 +1,24 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+
+# Credential vault — encrypted but still private
+.vault/
+
+# Isolated per-deployment Terraform workspaces
+workspaces/
+
+# Coxy persistent DB
+.coxy/
+
+# Local browser automation artifacts
+.playwright-mcp/
