@@ -443,7 +443,21 @@ CUSTOM_LLM_MODEL=lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF
 
 ---
 
-### 7.4 Sub-option D — Any other HTTP API
+### 7.4 Sub-option D — Company internal AI proxy (reverse-engineered from Network tab)
+
+Your company has an internal ChatGPT-like interface backed by Anthropic. You inspected
+the Network tab, found the endpoint, and built a Python script that calls it.
+
+> 📖 **Full step-by-step guide for this exact scenario — including response format detection,
+> auth patterns, streaming, and tool-calling fallback:**
+> **[COMPANY_PROXY_INTEGRATION.md](COMPANY_PROXY_INTEGRATION.md)**
+
+Quick summary: set `USE_CUSTOM_LLM=true`, put your endpoint and token in `.env`, then
+copy your `requests` code into `src/llm/custom_client.py`'s `complete()` method.
+
+---
+
+### 7.5 Sub-option E — Any other HTTP API
 
 Edit `src/llm/custom_client.py` to implement your own `complete()` method.
 The file contains two ready-made paths:
