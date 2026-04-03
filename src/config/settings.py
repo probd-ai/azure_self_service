@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     use_coxy: bool = Field(False, alias="USE_COXY")          # GitHub Copilot via Coxy proxy
     # If both are false, standard OpenAI is used.
 
+    # ── Custom LLM (any requests-based client the user provides) ─────────────
+    # Set USE_CUSTOM_LLM=true and place your implementation in src/llm/custom_client.py
+    use_custom_llm: bool = Field(False, alias="USE_CUSTOM_LLM")
+    custom_llm_endpoint: str = Field("http://localhost:11434/v1/chat/completions", alias="CUSTOM_LLM_ENDPOINT")
+    custom_llm_token: str = Field("", alias="CUSTOM_LLM_TOKEN")
+    custom_llm_model: str = Field("llama3", alias="CUSTOM_LLM_MODEL")
+
     # ── Azure OpenAI ──────────────────────────────────────────────────────────
     azure_openai_api_key: str = Field("", alias="AZURE_OPENAI_API_KEY")
     azure_openai_endpoint: str = Field("", alias="AZURE_OPENAI_ENDPOINT")
@@ -38,6 +45,8 @@ class Settings(BaseSettings):
 
     @property
     def model_name(self) -> str:
+        if self.use_custom_llm:
+            return self.custom_llm_model
         if self.use_coxy:
             return self.coxy_model
         if self.use_azure_openai:

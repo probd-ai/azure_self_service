@@ -5,9 +5,9 @@ LLM ↔ tools (list_directory + read_file) until a final answer is ready.
 import re
 import json
 from typing import Generator
-from openai import AzureOpenAI, OpenAI
-from openai import RateLimitError, APIStatusError, APIConnectionError, APITimeoutError
 from loguru import logger
+from src.llm.base import BaseLLMClient
+from src.llm.openai_wrapper import OpenAIWrapper, RateLimitError, APIStatusError, APIConnectionError, APITimeoutError
 
 from src.config.settings import settings
 from src.agent.prompts import SYSTEM_PROMPT
@@ -156,21 +156,18 @@ def _execute_tool(name: str, arguments: dict) -> str:
 
 
 # ── LLM client factory ────────────────────────────────────────────────────────
-def _get_client():
-    if settings.use_coxy:
-        # Coxy exposes a local OpenAI-compatible API backed by GitHub Copilot.
-        # Use a dummy key '_' — Coxy uses its own token set via its admin UI.
-        return OpenAI(
-            api_key=settings.coxy_api_key,
-            base_url=settings.coxy_base_url,
-        )
-    if settings.use_azure_openai:
-        return AzureOpenAI(
-            api_key=settings.azure_openai_api_key,
-            azure_endpoint=settings.azure_openai_endpoint,
-            api_version=settings.azure_openai_api_version,
-        )
-    return OpenAI(api_key=settings.openai_api_key)
+def _get_client() -> BaseLLMClient:
+    """
+    Returns a BaseLLMClient implementation selected by env vars:
+      USE_CUSTOM_LLM=true  → src/llm/custom_client.py :: CustomLLMClient
+      USE_COXY=true        → OpenAIWrapper (Coxy proxy)
+      USE_AZURE_OPENAI=true→ OpenAIWrapper (Azure backend)
+      (default)            → OpenAIWrapper (standard OpenAI)
+    """
+    if settings.use_custom_llm:
+        from src.llm.custom_client import CustomLLMClient   # lazy import — only when needed
+        return CustomLLMClient()
+    return OpenAIWrapper()
 
 
 # ── Streaming agent loop ─────────────────────────────────────────────────────
@@ -206,7 +203,7 @@ def stream_agent(
         logger.debug(f"Agent iteration {iteration + 1}")
 
         try:
-            response = client.chat.completions.create(
+            response = client.complete(
                 model=settings.model_name,
                 messages=messages,
                 tools=TOOLS,
@@ -257,7 +254,7 @@ def stream_agent(
                 "tool_calls": [
                     {
                         "id": tc.id,
-                        "type": "function",
+                        "type": tc.type,
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments}
                     }
                     for tc in assistant_msg.tool_calls
