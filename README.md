@@ -287,7 +287,20 @@ curl -s -X POST http://localhost:8000/api/chat \
 
 ## LLM Provider Options
 
-Switch provider any time by editing two lines in `.env` and restarting `python main.py`.
+Five backends are supported. Switch any time by editing `.env` and restarting `python main.py`.
+
+> 📖 **Full setup instructions, model lists, and troubleshooting for every provider:**
+> see **[LLM_SETUP_GUIDE.md](LLM_SETUP_GUIDE.md)**
+
+| # | Provider | Flag | Best for |
+|---|---|---|---|
+| 1 | **Coxy / GitHub Copilot** | `USE_COXY=true` | Free POC (needs Docker + Copilot sub) |
+| 2 | **Azure OpenAI** | `USE_AZURE_OPENAI=true` | Enterprise / production |
+| 3 | **Standard OpenAI** | *(default — no flag needed)* | Existing OpenAI API key |
+| 4 | **Anthropic (Claude)** | `USE_ANTHROPIC=true` | Best reasoning, 200K context |
+| 5 | **Custom HTTP LLM** | `USE_CUSTOM_LLM=true` | Ollama, vLLM, LM Studio, any API |
+
+### Quick `.env` examples
 
 ### Option A — Coxy / GitHub Copilot *(POC / free)*
 
@@ -321,6 +334,27 @@ USE_COXY=false
 USE_AZURE_OPENAI=false
 OPENAI_API_KEY=your-key-here
 OPENAI_MODEL=gpt-4o
+```
+
+### Option D — Anthropic (Claude)
+
+```env
+USE_ANTHROPIC=true
+ANTHROPIC_API_KEY=sk-ant-api03-...
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+### Option E — Custom LLM (Ollama example)
+
+```bash
+ollama pull llama3.1   # download the model
+ollama serve           # start on http://localhost:11434
+```
+
+```env
+USE_CUSTOM_LLM=true
+CUSTOM_LLM_ENDPOINT=http://localhost:11434/v1/chat/completions
+CUSTOM_LLM_MODEL=llama3.1
 ```
 
 ---
