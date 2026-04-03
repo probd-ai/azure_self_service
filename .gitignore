@@ -22,3 +22,4 @@ workspaces/
 
 # Local browser automation artifacts
 .playwright-mcp/
+not_used_in_this_project.py
