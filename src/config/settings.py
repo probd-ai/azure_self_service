@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     custom_llm_endpoint: str = Field("http://localhost:11434/v1/chat/completions", alias="CUSTOM_LLM_ENDPOINT")
     custom_llm_token: str = Field("", alias="CUSTOM_LLM_TOKEN")
     custom_llm_model: str = Field("llama3", alias="CUSTOM_LLM_MODEL")
-
+    # ── Anthropic (Claude) ────────────────────────────────────────────────────
+    use_anthropic: bool = Field(False, alias="USE_ANTHROPIC")
+    anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field("claude-3-5-sonnet-20241022", alias="ANTHROPIC_MODEL")
     # ── Azure OpenAI ──────────────────────────────────────────────────────────
     azure_openai_api_key: str = Field("", alias="AZURE_OPENAI_API_KEY")
     azure_openai_endpoint: str = Field("", alias="AZURE_OPENAI_ENDPOINT")
@@ -47,6 +50,8 @@ class Settings(BaseSettings):
     def model_name(self) -> str:
         if self.use_custom_llm:
             return self.custom_llm_model
+        if self.use_anthropic:
+            return self.anthropic_model
         if self.use_coxy:
             return self.coxy_model
         if self.use_azure_openai:

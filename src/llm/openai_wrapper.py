@@ -8,9 +8,15 @@ It wraps the SDK response objects and translates them into AgentResponse
 so agent.py never touches the openai SDK directly.
 """
 from openai import OpenAI, AzureOpenAI
-from openai import RateLimitError, APITimeoutError, APIConnectionError, APIStatusError  # re-exported for agent.py
+from openai import RateLimitError as _OAIRateLimitError
+from openai import APITimeoutError as _OAITimeoutError
+from openai import APIConnectionError as _OAIConnectionError
+from openai import APIStatusError as _OAIStatusError
 
-from src.llm.base import BaseLLMClient, AgentResponse, AgentChoice, AgentMessage, ToolCall, ToolFunction
+from src.llm.base import (
+    BaseLLMClient, AgentResponse, AgentChoice, AgentMessage, ToolCall, ToolFunction,
+    LLMRateLimitError, LLMTimeoutError, LLMConnectionError, LLMStatusError,
+)
 from src.config.settings import settings
 
 
@@ -49,13 +55,22 @@ class OpenAIWrapper(BaseLLMClient):
     ) -> AgentResponse:
         # Call the real SDK — this is the ONLY place in the whole project
         # that touches openai SDK objects directly
-        raw = self._client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            temperature=temperature,
-        )
+        try:
+            raw = self._client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature,
+            )
+        except _OAIRateLimitError as e:
+            raise LLMRateLimitError(str(e)) from e
+        except _OAITimeoutError as e:
+            raise LLMTimeoutError(str(e)) from e
+        except _OAIConnectionError as e:
+            raise LLMConnectionError(str(e)) from e
+        except _OAIStatusError as e:
+            raise LLMStatusError(str(e), e.status_code) from e
 
         # Translate SDK response → AgentResponse
         choices = []

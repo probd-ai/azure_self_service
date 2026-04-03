@@ -83,3 +83,27 @@ class BaseLLMClient(ABC):
         temperature: float,
     ) -> AgentResponse:
         ...
+
+
+# ── Unified LLM error classes ─────────────────────────────────────────────────
+# Both OpenAI and Anthropic wrappers catch their SDK-specific errors and
+# re-raise these, so agent.py only ever handles one consistent set.
+
+class LLMRateLimitError(Exception):
+    """API rate limit hit — ask the user to wait and retry."""
+
+
+class LLMTimeoutError(Exception):
+    """Request timed out."""
+
+
+class LLMConnectionError(Exception):
+    """Cannot reach the LLM backend (wrong URL, service down, etc.)."""
+
+
+class LLMStatusError(Exception):
+    """The LLM API returned an HTTP error status."""
+    def __init__(self, message: str, status_code: int = 0):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code

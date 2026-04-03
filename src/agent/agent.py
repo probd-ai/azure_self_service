@@ -6,8 +6,8 @@ import re
 import json
 from typing import Generator
 from loguru import logger
-from src.llm.base import BaseLLMClient
-from src.llm.openai_wrapper import OpenAIWrapper, RateLimitError, APIStatusError, APIConnectionError, APITimeoutError
+from src.llm.base import BaseLLMClient, LLMRateLimitError, LLMTimeoutError, LLMConnectionError, LLMStatusError
+from src.llm.openai_wrapper import OpenAIWrapper
 
 from src.config.settings import settings
 from src.agent.prompts import SYSTEM_PROMPT
@@ -165,8 +165,11 @@ def _get_client() -> BaseLLMClient:
       (default)            → OpenAIWrapper (standard OpenAI)
     """
     if settings.use_custom_llm:
-        from src.llm.custom_client import CustomLLMClient   # lazy import — only when needed
+        from src.llm.custom_client import CustomLLMClient      # lazy import — only when needed
         return CustomLLMClient()
+    if settings.use_anthropic:
+        from src.llm.anthropic_wrapper import AnthropicWrapper  # lazy import — only when needed
+        return AnthropicWrapper()
     return OpenAIWrapper()
 
 
@@ -210,25 +213,25 @@ def stream_agent(
                 tool_choice="auto",
                 temperature=0.2,
             )
-        except RateLimitError:
+        except LLMRateLimitError:
             msg = "The AI service is currently rate-limited. Please wait a moment and try again."
             logger.warning("LLM rate limit hit")
             session.add("assistant", msg)
             yield {"type": "done", "reply": msg}
             return
-        except APITimeoutError:
+        except LLMTimeoutError:
             msg = "The AI service timed out. Please try again."
             logger.warning("LLM request timed out")
             session.add("assistant", msg)
             yield {"type": "done", "reply": msg}
             return
-        except APIConnectionError as e:
-            msg = f"Cannot reach the AI service. Is Coxy/the LLM backend running? ({e})"
+        except LLMConnectionError as e:
+            msg = f"Cannot reach the AI service. Is the LLM backend running? ({e})"
             logger.error(f"LLM connection error: {e}")
             session.add("assistant", msg)
             yield {"type": "done", "reply": msg}
             return
-        except APIStatusError as e:
+        except LLMStatusError as e:
             msg = f"The AI service returned an error (HTTP {e.status_code}). Please try again."
             logger.error(f"LLM API error {e.status_code}: {e.message}")
             session.add("assistant", msg)
