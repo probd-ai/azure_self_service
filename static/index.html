@@ -206,10 +206,23 @@
     #btn-send svg { width: 16px; height: 16px; fill: white; }
     .input-hint { margin-top: 8px; font-size: 11px; color: var(--text-dim); text-align: center; }
 
+    /* ── Option chips (intent clarification) ── */
+    .option-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .option-chip {
+      background: var(--bg-input); border: 1px solid var(--accent);
+      color: var(--text); border-radius: 20px; padding: 7px 18px;
+      font-size: 13px; cursor: pointer; font-family: var(--font);
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+      line-height: 1.4;
+    }
+    .option-chip:hover { background: var(--accent); color: #fff; }
+    .option-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+
     @media (max-width: 700px) {
       #sidebar { position: fixed; z-index: 100; transform: translateX(-100%); }
       #sidebar.open { transform: translateX(0); }
       .suggestions { grid-template-columns: 1fr; }
+      .option-chips { flex-direction: column; }
     }
   </style>
 </head>
@@ -417,6 +430,7 @@ async function sendMessage() {
         } else if (data.type === 'done') {
           if (currentStep) { markStepDone(currentStep); currentStep = null; }
           contentDiv.innerHTML = marked.parse(data.reply);
+          renderOptionChips(contentDiv);
           contentDiv.style.display = 'block';
           collapseStatusLog(statusLog, stepsContainer);
           saveToHistory(text, sessionId);
@@ -639,6 +653,41 @@ function loadConversation(sid) {
   messagesEl.style.display = 'flex';
   msgLog.forEach(m => appendMessage(m.role, m.text));
   scrollToBottom();
+}
+
+function renderOptionChips(container) {
+  const raw = container.innerHTML;
+  // Match [option:label text] — the agent outputs one per line
+  const optionRe = /\[option:([^\]]+)\]/g;
+  if (!optionRe.test(raw)) return; // nothing to do
+
+  optionRe.lastIndex = 0;
+  const labels = [];
+  let match;
+  while ((match = optionRe.exec(raw)) !== null) labels.push(match[1].trim());
+
+  // Strip [option:...] markers and clean up empty paragraphs left behind
+  container.innerHTML = raw
+    .replace(/\[option:[^\]]+\]/g, '')
+    .replace(/<p>(\s|&nbsp;)*<\/p>/g, '');
+
+  // Build chip row
+  const chips = document.createElement('div');
+  chips.className = 'option-chips';
+  labels.forEach(label => {
+    const btn = document.createElement('button');
+    btn.className = 'option-chip';
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      if (isStreaming) return;
+      // Disable all chips in this group so user can't double-send
+      chips.querySelectorAll('.option-chip').forEach(b => { b.disabled = true; });
+      inputEl.value = label;
+      sendMessage();
+    });
+    chips.appendChild(btn);
+  });
+  container.appendChild(chips);
 }
 
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
