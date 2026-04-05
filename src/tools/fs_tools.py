@@ -1,37 +1,9 @@
 """
 fs_tools.py — Agent tools
-Five tools for exploring and understanding Terraform templates.
+Tools for exploring and understanding Terraform templates.
 """
-import os
 import re
 from pathlib import Path
-from src.config.settings import settings
-
-
-# Maps Terraform data-source resource types to the template folder(s) that create them.
-# A resource type can appear in multiple templates (e.g. azurerm_storage_account is
-# created by both storage_account/create/ and logic_app/create_common_resource/).
-# When multiple sources exist the agent must use context to pick the right one.
-_RESOURCE_TO_TEMPLATES: dict[str, list[str]] = {
-    "azurerm_resource_group":           ["terraform/resource_group/create/"],
-    "azurerm_virtual_network":          ["terraform/virtual_network/create/"],
-    "azurerm_subnet":                   ["terraform/virtual_network/create/"],
-    "azurerm_key_vault":                ["terraform/key_vault/create/"],
-    "azurerm_storage_account":          ["terraform/storage_account/create/",
-                                         "terraform/logic_app/create_common_resource/"],
-    "azurerm_kubernetes_cluster":       ["terraform/aks/create/"],
-    "azurerm_log_analytics_workspace":  ["terraform/aks/create_common_resource/",
-                                         "terraform/logic_app/create_common_resource/"],
-    "azurerm_user_assigned_identity":   ["terraform/aks/create_common_resource/",
-                                         "terraform/logic_app/create_common_resource/"],
-    "azurerm_service_plan":             ["terraform/logic_app/create_common_resource/"],
-    "azurerm_application_insights":     ["terraform/logic_app/create/"],
-}
-
-# azapi data sources use the generic type "azapi_resource" — the actual Azure resource
-# type is embedded inside the `type` attribute as a string, not extractable by regex alone.
-# These are flagged separately so the agent can inspect them manually if needed.
-_AZAPI_DATA_SOURCE_TYPES = {"azapi_resource", "azapi_resource_list"}
 
 # Variable names that contain secrets — shown with a warning
 _SENSITIVE_NAMES = {"client_secret", "password", "secret", "api_key", "access_key",
@@ -100,81 +72,37 @@ def read_file(path: str) -> dict:
         return {"error": f"Could not read file: {e}"}
 
 
-# ── Tool 3: find_dependencies ─────────────────────────────────────────────────
-
-def find_dependencies(path: str) -> dict:
+def read_files(paths: list[str]) -> dict:
     """
-    Parse a main.tf file (or directory containing one) and extract every
-    data{} block to produce a guaranteed-correct dependency list.
-    Returns which templates must be deployed BEFORE this one.
+    Read multiple files in a single call. Returns all contents in one response.
+    Use this instead of calling read_file() repeatedly when you know upfront
+    which files you need — e.g. all mandate_read_files for a template group,
+    or all config_module files.
 
     Args:
-        path: Path to a main.tf file or the template directory containing it.
+        paths: List of relative paths from project root.
     """
-    target = Path(path) if Path(path).is_absolute() else Path(".") / path
-    if target.is_dir():
-        target = target / "main.tf"
-
-    if not target.exists():
-        return {"error": f"main.tf not found at: {target}"}
-
-    try:
-        content = target.read_text(encoding="utf-8")
-    except Exception as e:
-        return {"error": f"Could not read file: {e}"}
-
-    # Extract all  data "resource_type" "alias" {  blocks
-    data_blocks = re.findall(r'data\s+"([^"]+)"\s+"([^"]+)"', content)
-
-    deps = []
-    seen_templates: set[str] = set()
-    unknown: list[str] = []
-    azapi_data_sources: list[str] = []
-
-    for resource_type, alias in data_blocks:
-        # azapi data sources — the real ARM type is inside the `type` attribute string,
-        # not in the data block header, so we flag them separately for the agent to inspect
-        if resource_type in _AZAPI_DATA_SOURCE_TYPES:
-            azapi_data_sources.append(alias)
-            continue
-
-        templates = _RESOURCE_TO_TEMPLATES.get(resource_type)
-        if templates:
-            for template in templates:
-                if template not in seen_templates:
-                    seen_templates.add(template)
-                    deps.append({
-                        "depends_on_template": template,
-                        "reason": f'Reads an existing {resource_type} via data source "{alias}"',
-                        "must_exist_before_deploy": True,
-                        "ambiguous": len(templates) > 1,
-                        "alternative_sources": [t for t in templates if t != template] if len(templates) > 1 else [],
-                        "note": (
-                            f"Multiple templates can create {resource_type}. "
-                            f"Pick the one that matches this environment's deployment context."
-                        ) if len(templates) > 1 else None,
-                    })
+    results = []
+    for path in paths:
+        target = Path(path) if Path(path).is_absolute() else Path(".") / path
+        if not target.exists():
+            results.append({"path": path, "error": f"File does not exist: {path}"})
+        elif target.is_dir():
+            results.append({"path": path, "error": f"Path is a directory — use list_directory instead."})
         else:
-            if resource_type not in unknown:
-                unknown.append(resource_type)
-
+            try:
+                results.append({"path": path, "content": target.read_text(encoding="utf-8")})
+            except Exception as e:
+                results.append({"path": path, "error": str(e)})
     return {
-        "analyzed_file": str(target),
-        "dependency_count": len(deps),
-        "dependencies": deps,
-        "unrecognised_data_sources": unknown,
-        "azapi_data_sources": azapi_data_sources,
-        "note": (
-            "Deploy dependencies FIRST (bottom-up order). "
-            "Each dependency may have its own dependencies — check recursively. "
-            "For ambiguous entries, pick the template that fits the current deployment context. "
-            "azapi_data_sources are azapi-specific lookups — inspect the main.tf `type` attribute "
-            "for the actual ARM resource type used."
-        ),
+        "files_requested": len(paths),
+        "files_read":      sum(1 for r in results if "content" in r),
+        "files_errored":   sum(1 for r in results if "error"   in r),
+        "results":         results,
     }
 
 
-# ── Tool 4: generate_tfvars_template ─────────────────────────────────────────
+# ── Tool 3: generate_tfvars_template ─────────────────────────────────────────
 
 def generate_tfvars_template(path: str) -> dict:
     """
@@ -197,8 +125,30 @@ def generate_tfvars_template(path: str) -> dict:
     except Exception as e:
         return {"error": f"Could not read file: {e}"}
 
-    # Parse each variable block (greedy multi-line)
-    var_blocks = re.findall(r'variable\s+"([^"]+)"\s*\{([^}]+)\}', content, re.DOTALL)
+    # Parse each variable block using brace-counting so that nested braces
+    # (e.g.  default = {}  or  default = { key = "v" }) are handled correctly.
+    # The simple [^}]+ regex stops at the FIRST } and silently truncates any
+    # variable whose body contains a nested brace, causing missing descriptions
+    # and wrong defaults.  This affects every template that has a tags variable.
+    def _parse_variable_blocks(src: str) -> list[tuple[str, str]]:
+        blocks = []
+        for m in re.finditer(r'variable\s+"([^"]+)"\s*\{', src):
+            var_name = m.group(1)
+            start    = m.end()
+            depth    = 1
+            pos      = start
+            while pos < len(src) and depth > 0:
+                ch = src[pos]
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                pos += 1
+            body = src[start : pos - 1]   # everything between the outer { }
+            blocks.append((var_name, body))
+        return blocks
+
+    var_blocks = _parse_variable_blocks(content)
 
     variables = []
     for var_name, body in var_blocks:

@@ -21,7 +21,7 @@
 # ── Logic App Standard (Microsoft.Web/sites with kind=functionapp,workflowapp) ─
 output "azapi_logic_app_standard_api_version" {
   description = "API version for Logic App Standard: Microsoft.Web/sites"
-  value       = "2023-12-01"
+  value       = "Microsoft.Web/sites@2023-12-01"
 }
 
 # ── Workflow definitions inside a Logic App Standard instance ─────────────────

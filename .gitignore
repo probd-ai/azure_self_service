@@ -11,6 +11,12 @@ venv/
 *.tfvars.json
 .terraform.lock.hcl
 
+# Generated at startup — never commit
+terraform/_index.json
+
+# Ephemeral deployment bundles — rebuilt on demand
+tmp/
+
 # Credential vault — encrypted but still private
 .vault/
 

@@ -12,7 +12,9 @@ from src.llm.openai_wrapper import OpenAIWrapper
 from src.config.settings import settings
 from src.agent.prompts import SYSTEM_PROMPT
 from src.agent.conversation import Session
-from src.tools.fs_tools import list_directory, read_file, find_dependencies, generate_tfvars_template, search_templates
+from src.tools.fs_tools import list_directory, read_file, read_files, generate_tfvars_template, search_templates
+from src.tools.index_builder import get_template_index, rebuild_index
+from src.tools.bundle_tools import bundle_deployment_plan
 
 # ── Guard: patterns that attempt to extract the system prompt ─────────────────
 _PROMPT_PROBE_RE = re.compile(
@@ -31,6 +33,35 @@ _CONFIDENTIAL_REPLY = (
 
 # ── Tool definitions sent to LLM ─────────────────────────────────────────────
 TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_template_index",
+            "description": (
+                "Returns the terraform template navigation map. "
+                "Call this FIRST at the start of every conversation to discover all available "
+                "services, their template types (create / create_common_resource), and the "
+                "exact list of files in each template (mandate_read_files). "
+                "WARNING: This is a navigation MAP only — not source of truth. "
+                "You MUST read every file listed in mandate_read_files AND every file in "
+                "config_module.mandate_read_files for each template in your plan before "
+                "presenting anything to the customer. Never plan from this index alone."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rebuild_index",
+            "description": (
+                "Force a full re-scan of all terraform templates and rebuild the navigation index. "
+                "Use this if get_template_index returns unexpected results, or if you have reason "
+                "to believe templates have been added or changed since startup."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []}
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -54,10 +85,39 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_files",
+            "description": (
+                "Read multiple files in a single call. "
+                "ALWAYS prefer this over calling read_file() one file at a time. "
+                "Use this to read all mandate_read_files for one or more templates at once, "
+                "and all config_module.mandate_read_files in the same call. "
+                "Pass the full list of paths you need upfront."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "List of relative file paths from project root. "
+                            "E.g. ['terraform/config/main.tf', 'terraform/logic_app/create/main.tf', "
+                            "'terraform/logic_app/create/variables.tf']"
+                        )
+                    }
+                },
+                "required": ["paths"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": (
-                "Read the full content of a file. Use to read README.md, main.tf (for data{} dependencies), "
-                "variables.tf (for required inputs), and outputs.tf (for exposed values)."
+                "Read the full content of a single file. "
+                "Use read_files (plural) when reading more than one file — it is faster. "
+                "Use this only when you need exactly one file."
             ),
             "parameters": {
                 "type": "object",
@@ -65,27 +125,6 @@ TOOLS = [
                     "path": {
                         "type": "string",
                         "description": "Relative path from project root, e.g. 'terraform/aks/create/main.tf'"
-                    }
-                },
-                "required": ["path"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_dependencies",
-            "description": (
-                "Parse a template's main.tf and extract ALL data{} blocks to return a guaranteed-correct "
-                "list of which other templates must be deployed first. "
-                "Use this INSTEAD of manually reading main.tf to find dependencies — it is faster and more accurate."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to main.tf or its parent directory, e.g. 'terraform/aks/create/'"
                     }
                 },
                 "required": ["path"]
@@ -135,15 +174,52 @@ TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bundle_deployment_plan",
+            "description": (
+                "Package the deployment plan into a downloadable zip bundle and return a download URL. "
+                "Call this as the LAST step of every deployment plan, after you have: "
+                "(1) identified all templates and their order, "
+                "(2) called generate_tfvars_template() for each step. "
+                "Pass the ordered steps list with template_path and tfvars_content per step. "
+                "Return the download_url to the customer so they can download and run the bundle."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "description": "Ordered list of deployment steps.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "step_number":    {"type": "integer", "description": "1-based step order"},
+                                "label":          {"type": "string",  "description": "Human-readable step name, e.g. 'Resource Group'"},
+                                "template_path":  {"type": "string",  "description": "Path to template dir, e.g. 'terraform/resource_group/create/'"},
+                                "tfvars_content": {"type": "string",  "description": "Full terraform.tfvars content from generate_tfvars_template()"}
+                            },
+                            "required": ["step_number", "label", "template_path", "tfvars_content"]
+                        }
+                    }
+                },
+                "required": ["steps"]
+            }
+        }
+    },
 ]
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
 TOOL_MAP = {
-    "list_directory":         list_directory,
-    "read_file":              read_file,
-    "find_dependencies":      find_dependencies,
+    "list_directory":           list_directory,
+    "read_file":                read_file,
+    "read_files":               read_files,
     "generate_tfvars_template": generate_tfvars_template,
-    "search_templates":       search_templates,
+    "search_templates":         search_templates,
+    "get_template_index":       get_template_index,
+    "rebuild_index":            rebuild_index,
+    "bundle_deployment_plan":   bundle_deployment_plan,
 }
 
 
@@ -175,7 +251,7 @@ def _get_client() -> BaseLLMClient:
 
 # ── Streaming agent loop ─────────────────────────────────────────────────────
 def stream_agent(
-    session: Session, user_message: str, max_iterations: int = 15
+    session: Session, user_message: str, max_iterations: int = 20
 ) -> Generator[dict, None, None]:
     """
     Agentic loop that yields typed status events so the UI can show live progress.
@@ -309,7 +385,7 @@ def stream_agent(
 
 
 # ── Synchronous wrapper ───────────────────────────────────────────────────────
-def run_agent(session: Session, user_message: str, max_iterations: int = 15) -> str:
+def run_agent(session: Session, user_message: str, max_iterations: int = 20) -> str:
     """Thin wrapper around stream_agent — drains events and returns the final reply."""
     for event in stream_agent(session, user_message, max_iterations):
         if event["type"] == "done":

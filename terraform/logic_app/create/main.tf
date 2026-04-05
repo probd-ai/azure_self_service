@@ -79,7 +79,7 @@ resource "azurerm_role_assignment" "logic_storage" {
 #
 # API version: module.config.azapi_logic_app_standard_api_version
 resource "azapi_resource" "logic_app" {
-  type      = "Microsoft.Web/sites@${module.config.azapi_logic_app_standard_api_version}"
+  type      = module.config.azapi_logic_app_standard_api_version
   name      = var.logic_app_name
   location  = data.azurerm_resource_group.this.location
   parent_id = data.azurerm_resource_group.this.id

@@ -3,7 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from loguru import logger
 from src.api.routes.chat import router as chat_router
+from src.api.routes.download import router as download_router
+from src.tools.index_builder import build_index
 
 app = FastAPI(
     title="Azure Self-Service AI Agent",
@@ -18,7 +21,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+def startup_event():
+    """Build the template navigation index on startup."""
+    result = build_index()
+    if "error" in result:
+        logger.error(f"Failed to build template index: {result['error']}")
+    else:
+        logger.info(f"Template index ready: {result['templates_indexed']} templates indexed")
+
 app.include_router(chat_router, prefix="/api", tags=["Chat"])
+app.include_router(download_router, prefix="/api", tags=["Download"])
 
 # Serve the full-page chat UI
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")

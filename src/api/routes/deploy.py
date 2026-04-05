@@ -1,7 +1,16 @@
 """
 api/routes/deploy.py — Deployment trigger endpoints.
 
-Flow
+!! FUTURE WORK — NOT YET WIRED INTO main.py !!
+   This route depends on modules that are not yet implemented:
+     src/credentials/store.py   (credential vault)
+     src/deployment/runners/    (terraform runner)
+     src/deployment/workspace.py
+     src/deployment/variable_injector.py
+   Do NOT include this router in src/api/main.py until those modules exist.
+   Current production flow: bundle_deployment_plan() → /api/download/<id> (zip bundle).
+
+Flow (when implemented)
 ────
 1. Frontend sends POST /api/deploy with:
      { session_id, template_path, credential_id }
