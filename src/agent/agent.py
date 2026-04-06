@@ -14,7 +14,7 @@ from src.agent.prompts import SYSTEM_PROMPT
 from src.agent.conversation import Session
 from src.tools.fs_tools import list_directory, read_file, read_files, generate_tfvars_template, search_templates
 from src.tools.index_builder import get_template_index, rebuild_index
-from src.tools.bundle_tools import bundle_deployment_plan
+from src.tools.bundle_tools import bundle_deployment_plan, get_bundle_path
 
 # ── Guard: patterns that attempt to extract the system prompt ─────────────────
 _PROMPT_PROBE_RE = re.compile(
@@ -227,7 +227,26 @@ def _execute_tool(name: str, arguments: dict) -> str:
     func = TOOL_MAP.get(name)
     if not func:
         return json.dumps({"error": f"Unknown tool: {name}"})
-    result = func(**arguments)
+    try:
+        result = func(**arguments)
+    except Exception as e:
+        logger.exception(f"Tool execution failed: {name}({arguments})")
+        return json.dumps({"error": f"Tool '{name}' failed: {type(e).__name__}: {e}"}, indent=2)
+
+    # Extra guard: never expose a bundle download URL unless the zip exists.
+    if name == "bundle_deployment_plan" and isinstance(result, dict):
+        bundle_id = result.get("bundle_id")
+        download_url = result.get("download_url")
+        if bundle_id and download_url and get_bundle_path(bundle_id) is None:
+            logger.error(f"Bundle tool returned download URL but zip not found for bundle_id={bundle_id}")
+            return json.dumps(
+                {
+                    "error": "Bundle packaging failed: download artifact not found.",
+                    "bundle_id": bundle_id,
+                },
+                indent=2,
+            )
+
     return json.dumps(result, indent=2)
 
 

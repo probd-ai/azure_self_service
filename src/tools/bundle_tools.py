@@ -279,6 +279,14 @@ def bundle_deployment_plan(steps: list[dict]) -> dict:
             if file.is_file():
                 zf.write(file, file.relative_to(bundle_dir))
 
+    if not zip_path.exists() or zip_path.stat().st_size == 0:
+        shutil.rmtree(bundle_dir, ignore_errors=True)
+        return {
+            "error": "Bundle packaging failed: zip archive was not created.",
+            "bundle_id": bundle_id,
+            "errors": errors,
+        }
+
     # Clean up the unzipped staging directory
     shutil.rmtree(bundle_dir, ignore_errors=True)
 
