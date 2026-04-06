@@ -414,9 +414,28 @@ async function sendMessage() {
 
         } else if (data.type === 'tool_call') {
           if (currentStep) { markStepDone(currentStep); currentStep = null; }
-          const icon  = data.tool === 'list_directory' ? '📁' : '📄';
-          const verb  = data.tool === 'list_directory' ? 'Exploring' : 'Reading';
-          const label = `${icon} ${verb} <code>${escapeHtml(data.args.path)}</code>`;
+          const toolName = data.tool || 'tool';
+          const args = data.args && typeof data.args === 'object' ? data.args : {};
+          let label;
+
+          if (toolName === 'list_directory') {
+            label = `📁 Exploring <code>${escapeHtml(args.path || '(root)')}</code>`;
+          } else if (toolName === 'read_file' || toolName === 'generate_tfvars_template') {
+            label = `📄 Reading <code>${escapeHtml(args.path || '(path not provided)')}</code>`;
+          } else if (toolName === 'read_files') {
+            const count = Array.isArray(args.paths) ? args.paths.length : 0;
+            label = `📚 Reading <code>${count} file${count === 1 ? '' : 's'}</code>`;
+          } else if (toolName === 'get_template_index' || toolName === 'rebuild_index') {
+            label = `🧭 Indexing templates <code>${escapeHtml(toolName)}</code>`;
+          } else if (toolName === 'search_templates') {
+            label = `🔎 Searching templates <code>${escapeHtml(args.keyword || '(keyword not provided)')}</code>`;
+          } else if (toolName === 'bundle_deployment_plan') {
+            const count = Array.isArray(args.steps) ? args.steps.length : 0;
+            label = `📦 Building bundle <code>${count} step${count === 1 ? '' : 's'}</code>`;
+          } else {
+            label = `🛠️ Running <code>${escapeHtml(toolName)}</code>`;
+          }
+
           currentStep = addStatusStep(stepsContainer, label, true);
 
         } else if (data.type === 'tool_done') {
@@ -693,7 +712,8 @@ function renderOptionChips(container) {
 function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 
 function escapeHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const s = str == null ? '' : String(str);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function copyCode(id, btn) {
